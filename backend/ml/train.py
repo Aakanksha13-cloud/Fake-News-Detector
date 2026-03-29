@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
-from datasets import ClassLabel, DatasetDict, load_dataset
+from datasets import DatasetDict, load_dataset
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
 from transformers import (
     AutoModelForSequenceClassification,
@@ -29,7 +29,11 @@ ID_TO_LABEL = {value: key for key, value in LABEL_TO_ID.items()}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine-tune RoBERTa for fake-news detection.")
-    parser.add_argument("--dataset-name", default="liar", help="HuggingFace dataset name.")
+    parser.add_argument(
+        "--dataset-name",
+        default="ucsbnlp/liar",
+        help="HuggingFace dataset id. Use ucsbnlp/liar (Parquet) on datasets>=4; legacy id 'liar' is script-based.",
+    )
     parser.add_argument("--dataset-config", default=None, help="Optional dataset config.")
     parser.add_argument("--text-column", default="statement", help="Source text column.")
     parser.add_argument("--label-column", default="label", help="Source label column.")
@@ -85,6 +89,20 @@ def infer_text_column(split, preferred_column: str) -> str:
     raise ValueError(f"No suitable text column found in dataset columns: {split.column_names}")
 
 
+def load_dataset_safe(dataset_name: str, dataset_config: str | None) -> DatasetDict:
+    """Load HF dataset; fall back to Parquet LIAR if script-based loading is disabled."""
+    try:
+        if dataset_config:
+            return load_dataset(dataset_name, dataset_config)
+        return load_dataset(dataset_name)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "Dataset scripts are no longer supported" in msg or "liar.py" in msg:
+            if dataset_name in {"liar", "LIAR"} or dataset_name.endswith("/liar"):
+                return load_dataset("ucsbnlp/liar")
+        raise
+
+
 def ensure_train_eval_splits(ds: DatasetDict, test_size: float, seed: int) -> DatasetDict:
     if "train" in ds and "validation" in ds:
         return ds
@@ -120,7 +138,7 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset = load_dataset(args.dataset_name, args.dataset_config)
+    dataset = load_dataset_safe(args.dataset_name, args.dataset_config)
     dataset = ensure_train_eval_splits(dataset, test_size=args.test_size, seed=args.seed)
     dataset = normalize_label_column(dataset, label_column=args.label_column)
 
