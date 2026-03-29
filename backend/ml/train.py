@@ -25,6 +25,11 @@ from transformers import (
 MODEL_NAME = "roberta-base"
 LABEL_TO_ID = {"FAKE": 0, "UNCERTAIN": 1, "REAL": 2}
 ID_TO_LABEL = {value: key for key, value in LABEL_TO_ID.items()}
+LIAR_PARQUET_FILES = {
+    "train": "https://huggingface.co/datasets/ucsbnlp/liar/resolve/main/default/liar-train.parquet",
+    "validation": "https://huggingface.co/datasets/ucsbnlp/liar/resolve/main/default/liar-validation.parquet",
+    "test": "https://huggingface.co/datasets/ucsbnlp/liar/resolve/main/default/liar-test.parquet",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -91,6 +96,9 @@ def infer_text_column(split, preferred_column: str) -> str:
 
 def load_dataset_safe(dataset_name: str, dataset_config: str | None) -> DatasetDict:
     """Load HF dataset; fall back to Parquet LIAR if script-based loading is disabled."""
+    if dataset_name in {"liar", "LIAR", "ucsbnlp/liar", "UKPLab/liar"}:
+        return load_dataset("parquet", data_files=LIAR_PARQUET_FILES)
+
     try:
         if dataset_config:
             return load_dataset(dataset_name, dataset_config)
@@ -99,7 +107,7 @@ def load_dataset_safe(dataset_name: str, dataset_config: str | None) -> DatasetD
         msg = str(exc)
         if "Dataset scripts are no longer supported" in msg or "liar.py" in msg:
             if dataset_name in {"liar", "LIAR"} or dataset_name.endswith("/liar"):
-                return load_dataset("ucsbnlp/liar")
+                return load_dataset("parquet", data_files=LIAR_PARQUET_FILES)
         raise
 
 
